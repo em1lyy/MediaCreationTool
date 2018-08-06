@@ -1,0 +1,4 @@
+os_name=Norcux OS
+iso_url=https://raw.githubusercontent.com/NorcuxOS/downloads/master/norcuxos-current.iso
+iso_mirror=https://files.jagudev.net/NorcuxOS-mirror/norcuxos-current.iso
+md5=abcdef1234567890abcdef1234567890
