@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>os.conf</file>
+        <file>logo.png</file>
+    </qresource>
+</RCC>
