@@ -65,7 +65,7 @@ void MainWindow::on_btnStartInstall_released()
         this->repaint();
         this->prepareDrive(this->selectedDriveInfo.rootPath());
         this->downloadImage(fastestUrl);
-        connect(this, &MainWindow::downloaded, this, &MainWindow::writeImage)
+        connect(this, &MainWindow::downloaded, this, &MainWindow::writeImage);
     }
     else
     {
@@ -282,7 +282,7 @@ void MainWindow::imageDownloaded(QNetworkReply *pReply)
             this->ui->pbStatus->setValue(60);
             this->update();
             this->repaint();
-            emit downloaded(QFile(filename));
+            emit downloaded(new QFile(filename));
         }
     }
 }
@@ -306,9 +306,23 @@ bool MainWindow::saveToDisk(const QString &filename, QIODevice *data)
     return true;
 }
 
-void MainWindow::writeImage(QFile isoImage)
+void MainWindow::writeImage(QFile *isoImage)
 {
-
+#if defined(Q_OS_WIN)
+    QProcess *dd_p = new QProcess();
+    dd_p->start("./dd.exe bs=4M if=./os-image.iso of=" + this->selectedDriveInfo.rootPath());
+    dd_p->waitForFinished();
+    this->ui->pbStatus->setValue(100);
+    this->update();
+    this->repaint();
+#else
+    QProcess *dd_p = new QProcess();
+    dd_p->start("kdesudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive);
+    dd_p->waitForFinished();
+    this->ui->pbStatus->setValue(100);
+    this->update();
+    this->repaint();
+#endif
 }
 
 MainWindow::~MainWindow()

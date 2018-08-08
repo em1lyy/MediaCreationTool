@@ -34,7 +34,7 @@ public:
     QUrl testDownloadSpeeds();
     void downloadImage(QUrl imageUrl);
     void prepareDrive(QString mntPoint);
-    void writeImage(QFile isoImage);
+    void writeImage(QFile *isoImage);
     bool saveToDisk(const QString &filename, QIODevice *data);
 
     explicit MainWindow(QWidget *parent = 0);
@@ -42,6 +42,7 @@ public:
 
 signals:
     void downloaded(QFile *file);
+    void creationDone();
 
 private:
     Ui::MainWindow *ui;
