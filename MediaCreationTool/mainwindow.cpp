@@ -11,6 +11,7 @@
 #include <QMessageBox>
 #include <iostream>
 #include <QtNetwork>
+#include <adxintrin.h>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -33,11 +34,14 @@ MainWindow::MainWindow(QWidget *parent) :
     this->setWindowIcon(QPixmap(":/logo.png"));
     this->ui->lblIntroduction->setText(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">%OS% Media Creation Tool</span></p><p><span style=\" font-size:14pt;\">Welcome to the %OS% Media Creation Tool!<br/>This program will help you create a<br/>%OS% Boot Medium!</span></p><p>Please click on \"Begin\".</p><p>Program by <a href=\"https://jagudev.net\"><span style=\" text-decoration: underline; color:#2980b9;\">JaguDev</span></a>.</p></body></html>").replace("%OS%", this->os_name));
     this->ui->lblSelectUsb->setText(this->ui->lblSelectUsb->text().replace("%OS%", this->os_name));
+    connect(this->ui->selectDrive, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::storageCurrentIndexChanged);
+    connect(&manager, &QNetworkAccessManager::finished, this, &MainWindow::imageDownloaded);
 }
 
 void MainWindow::on_btnBegin_released()
 {
-    this->ui->selectDrive->addItems(getUsbDrives());
+    this->drives = this->getUsbDrives();
+    this->ui->selectDrive->addItems(this->storageInfoToString(this->drives));
     this->ui->stackedWidget->setCurrentIndex(1);
 }
 
@@ -51,10 +55,17 @@ void MainWindow::on_btnStartInstall_released()
     int result = warning->exec();
     if (result == QMessageBox::Yes)
     {
+        this->ui->lblCurrentAction->setText(this->ui->lblCurrentAction->text().replace("%OS%", this->os_name));
         this->ui->stackedWidget->setCurrentIndex(2);
-        bool isMirrorFaster = this->testDownloadSpeeds();
-        //QFile isoImageFile = downloadImage(isMirrorFaster);
-        //this->writeImage(isoImageFile);
+        this->update();
+        this->repaint();
+        QUrl fastestUrl = this->testDownloadSpeeds();
+        this->ui->pbStatus->setValue(3);
+        this->update();
+        this->repaint();
+        this->prepareDrive(this->selectedDriveInfo.rootPath());
+        this->downloadImage(fastestUrl);
+        connect(this, &MainWindow::downloaded, this, &MainWindow::writeImage)
     }
     else
     {
@@ -62,19 +73,34 @@ void MainWindow::on_btnStartInstall_released()
     }
 }
 
-QStringList MainWindow::getUsbDrives()
+QList<QStorageInfo> MainWindow::getUsbDrives()
+{
+    QList<QStorageInfo> driveData;
+
+    foreach (const QStorageInfo &storage, QStorageInfo::mountedVolumes())
+    {
+        if (storage.isValid())
+        {
+            driveData.append(storage);
+        }
+    }
+
+    return driveData;
+}
+
+QStringList MainWindow::storageInfoToString(QList<QStorageInfo> infos)
 {
     QString driveInfo;
     QStringList driveData;
 
-    foreach (const QStorageInfo &storage, QStorageInfo::mountedVolumes()) {
-        if (storage.isValid()) {
+    foreach (const QStorageInfo &storage, infos)
+    {
+        if (storage.isValid())
+        {
             driveInfo = storage.displayName();
             driveInfo.append(" - ");
             driveInfo.append(QString::number(((float)storage.bytesTotal() / 1024 / 1024 / 1024),'f' ,2));
             driveInfo.append(" GB");
-            driveInfo.append(" - ");
-            driveInfo.append(storage.fileSystemType());
             driveData.append(driveInfo);
         }
     }
@@ -83,7 +109,14 @@ QStringList MainWindow::getUsbDrives()
     return driveData;
 }
 
-bool MainWindow::testDownloadSpeeds()
+void MainWindow::storageCurrentIndexChanged(int index)
+{
+    this->selectedDriveInfo = this->drives.at(index);
+    this->selectedDrive = this->selectedDriveInfo.displayName() + " - " + QString::number(((float)this->selectedDriveInfo.bytesTotal() / 1024 / 1024 / 1024),'f' ,2) + " GB";
+    qDebug() << this->selectedDrive;
+}
+
+QUrl MainWindow::testDownloadSpeeds()
 {
     /* TEST MAIN URL */
     bool iso_url_dead = false;
@@ -161,22 +194,116 @@ bool MainWindow::testDownloadSpeeds()
   }
   if (iso_url_dead && (!mirror_url_dead))
   {
-      return true;
+      qDebug() << "USING MIRROR URL TO DOWNLOAD";
+      return QUrl(this->iso_mirror);
   }
   if ((!iso_url_dead) && mirror_url_dead)
   {
-      return false;
+      qDebug() << "USING MAIN URL TO DOWNLOAD";
+      return QUrl(this->iso_url);
   }
   float isoping = isoping_s.toFloat();
   float mirrorping = mirrorping_s.toFloat();
   if (isoping <= mirrorping)
   {
-      return false;
+      qDebug() << "USING MAIN URL TO DOWNLOAD";
+      return QUrl(this->iso_url);
   }
   else
   {
-      return true;
+      qDebug() << "USING MIRROR URL TO DOWNLOAD";
+      return QUrl(this->iso_mirror);
   }
+}
+
+void MainWindow::prepareDrive(QString mntPoint)
+{
+#if defined(Q_OS_WIN)
+    QProcess *umount_p = new QProcess();
+    umount_p->start("./dd.exe --umount=" + mntPoint);
+    umount_p->waitForFinished();
+    this->ui->pbStatus->setValue(10);
+    this->update();
+    this->repaint();
+#else
+    QProcess *findmnt_p = new QProcess();
+    qDebug() << mntPoint << " " << mntPoint.left(1) << " " << mntPoint.replace(" ", "\ ");
+    if (mntPoint.left(1) == "/")
+    {
+        qDebug() << "findmnt cmd 1";
+        findmnt_p->start("findmnt -nr -o source -m \"" + mntPoint.replace(" ", "\ ") + "\"");
+    }
+    else
+    {
+        qDebug() << "findmnt cmd 2";
+        findmnt_p->start("findmnt -nr -o source -T LABEL=" + mntPoint.replace(" ", "\    "));
+    }
+    findmnt_p->waitForFinished();
+    QString mntpnt = QString(findmnt_p->readAllStandardOutput());
+    qDebug() << mntpnt;
+    mntpnt = mntpnt.mid(5);
+    mntpnt = mntpnt.left(3);
+    qDebug() << mntpnt;
+    this->selectedDrive = "/dev/" + mntpnt;
+    qDebug() << this->selectedDrive;
+    this->ui->pbStatus->setValue(6);
+    this->update();
+    this->repaint();
+    QProcess *umount_p = new QProcess();
+    umount_p->start("umount " + this->selectedDrive);
+    umount_p->waitForFinished();
+    this->selectedDrive = "/dev/r" + mntpnt;
+    qDebug() << this->selectedDrive;
+    this->ui->pbStatus->setValue(10);
+    this->update();
+    this->repaint();
+#endif
+}
+
+void MainWindow::downloadImage(QUrl imageUrl)
+{
+    QNetworkRequest request(imageUrl);
+    QNetworkReply *reply = manager.get(request);
+}
+
+void MainWindow::imageDownloaded(QNetworkReply *pReply)
+{
+    QUrl url = pReply->url();
+    if (pReply->error()) {
+        QMessageBox *error = new QMessageBox(this);
+        error->setWindowTitle(tr("Download of Image failed"));
+        error->setText(tr("ERROR:\nThe download of the image failed.\nPlease try again later.\nIf you don't see this error for the first time,\nplease contact us at support@jagudev.net\nand provide the following error message:\n") + pReply->errorString());
+        error->addButton(QMessageBox::Ok);
+        error->exec();
+        this->close();
+    } else {
+        QString filename = "./os-image.iso";
+        if (saveToDisk(filename, pReply)) {
+            this->ui->pbStatus->setValue(60);
+            this->update();
+            this->repaint();
+            emit downloaded(QFile(filename));
+        }
+    }
+}
+
+bool MainWindow::saveToDisk(const QString &filename, QIODevice *data)
+{
+    QFile file(filename);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox *error = new QMessageBox(this);
+        error->setWindowTitle(tr("Download of Image failed"));
+        error->setText(tr("ERROR:\nThe download of the image failed.\nPlease try again later.\nIf you don't see this error for the first time,\nplease contact us at support@jagudev.net\nand provide the following error message:\njd-mct_403: Something's wrong with this computer's file permissions. Really Wrong."));
+        error->addButton(QMessageBox::Ok);
+        error->exec();
+        this->close();
+        return false;
+    }
+
+    file.write(data->readAll());
+    file.close();
+
+    return true;
 }
 
 void MainWindow::writeImage(QFile isoImage)
