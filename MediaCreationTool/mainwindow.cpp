@@ -13,6 +13,7 @@
 #include <QtNetwork>
 #include <adxintrin.h>
 
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
@@ -32,7 +33,7 @@ MainWindow::MainWindow(QWidget *parent) :
     }
     this->setWindowTitle(os_name + " Media Creation Tool");
     this->setWindowIcon(QPixmap(":/logo.png"));
-    this->ui->lblIntroduction->setText(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">%OS% Media Creation Tool</span></p><p><span style=\" font-size:14pt;\">Welcome to the %OS% Media Creation Tool!<br/>This program will help you create a<br/>%OS% Boot Medium!</span></p><p>Please click on \"Begin\".</p><p>Program by <a href=\"https://jagudev.net\"><span style=\" text-decoration: underline; color:#2980b9;\">JaguDev</span></a>.</p></body></html>").replace("%OS%", this->os_name));
+    this->ui->lblIntroduction->setText(this->ui->lblIntroduction->text().replace("%OS%", this->os_name));
     this->ui->lblSelectUsb->setText(this->ui->lblSelectUsb->text().replace("%OS%", this->os_name));
     connect(this->ui->selectDrive, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::storageCurrentIndexChanged);
     connect(&manager, &QNetworkAccessManager::finished, this, &MainWindow::imageDownloaded);
@@ -64,6 +65,9 @@ void MainWindow::on_btnStartInstall_released()
         this->update();
         this->repaint();
         this->prepareDrive(this->selectedDriveInfo.rootPath());
+        this->ui->lblCurrentAction->setText(tr(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Downloading... (Step 2 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is downloading the ISO Image...</span></p></body></html>")).replace("%OS%", this->os_name));
+        this->update();
+        this->repaint();
         this->downloadImage(fastestUrl);
         connect(this, &MainWindow::downloaded, this, &MainWindow::writeImage);
     }
@@ -71,6 +75,11 @@ void MainWindow::on_btnStartInstall_released()
     {
         this->close();
     }
+}
+
+void MainWindow::on_btnExit_released()
+{
+    this->close();
 }
 
 QList<QStorageInfo> MainWindow::getUsbDrives()
@@ -240,6 +249,7 @@ void MainWindow::prepareDrive(QString mntPoint)
     }
     findmnt_p->waitForFinished();
     QString mntpnt = QString(findmnt_p->readAllStandardOutput());
+    QString partition = QString(mntpnt);
     qDebug() << mntpnt;
     mntpnt = mntpnt.mid(5);
     mntpnt = mntpnt.left(3);
@@ -252,8 +262,12 @@ void MainWindow::prepareDrive(QString mntPoint)
     QProcess *umount_p = new QProcess();
     umount_p->start("umount " + this->selectedDrive);
     umount_p->waitForFinished();
-    this->selectedDrive = "/dev/r" + mntpnt;
-    qDebug() << this->selectedDrive;
+    this->ui->pbStatus->setValue(8);
+    this->update();
+    this->repaint();
+    QProcess *umount_p2 = new QProcess();
+    umount_p2->start("umount " + partition);
+    umount_p2->waitForFinished();
     this->ui->pbStatus->setValue(10);
     this->update();
     this->repaint();
@@ -308,6 +322,9 @@ bool MainWindow::saveToDisk(const QString &filename, QIODevice *data)
 
 void MainWindow::writeImage(QFile *isoImage)
 {
+    this->ui->lblCurrentAction->setText(tr(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Writing... (Step 3 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is writing the<br />Image to the Media...</span></p></body></html>")).replace("%OS%", this->os_name));
+    this->update();
+    this->repaint();
 #if defined(Q_OS_WIN)
     QProcess *dd_p = new QProcess();
     dd_p->start("./dd.exe bs=4M if=./os-image.iso of=" + this->selectedDriveInfo.rootPath());
@@ -315,17 +332,28 @@ void MainWindow::writeImage(QFile *isoImage)
     this->ui->pbStatus->setValue(100);
     this->update();
     this->repaint();
+#elif defined(Q_OS_MACOS)
+    QProcess *dd_p = new QProcess();
+    dd_p->start("osascript -e do shell script \"dd bs=4M if=./os-image.iso of=" + this->selectedDrive + "\" with administrator privileges");
+    dd_p->waitForFinished();
+    this->ui->pbStatus->setValue(100);
+    this->update();
+    this->repaint();
 #else
     QProcess *dd_p = new QProcess();
-    dd_p->start("kdesudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive);
+    qDebug() << "gksudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive;
+    dd_p->start("gksudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive);
     dd_p->waitForFinished();
     this->ui->pbStatus->setValue(100);
     this->update();
     this->repaint();
 #endif
+    this->ui->lblDone->setText(this->ui->lblDone->text.replace("%OS%", this->os_name));
+    this->ui->stackedWidget->setCurrentIndex(3);
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
 }
+

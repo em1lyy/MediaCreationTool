@@ -50,6 +50,7 @@ private:
 private slots:
     void on_btnBegin_released();
     void on_btnStartInstall_released();
+    void on_btnExit_released();
 
     void imageDownloaded(QNetworkReply* pReply);
 };
