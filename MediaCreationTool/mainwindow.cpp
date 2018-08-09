@@ -341,8 +341,8 @@ void MainWindow::writeImage(QFile *isoImage)
     this->repaint();
 #else
     QProcess *dd_p = new QProcess();
-    qDebug() << "gksudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive;
-    dd_p->start("gksudo dd bs=4M if=./os-image.iso of=" + this->selectedDrive);
+    qDebug() << "pkexec dd bs=4M if=./os-image.iso of=" + this->selectedDrive;
+    dd_p->start("pkexec dd bs=4M if=./os-image.iso of=" + this->selectedDrive);
     dd_p->waitForFinished();
     this->ui->pbStatus->setValue(100);
     this->update();
