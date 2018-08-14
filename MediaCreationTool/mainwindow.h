@@ -19,7 +19,8 @@ class MainWindow : public QMainWindow
 public:
     QString os_name;
     QString iso_url;
-    QString iso_mirror;
+    bool mirrors_aviable;
+    QList<QUrl> mirrors;
     QString md5;
     QStorageInfo selectedDriveInfo;
     QList<QStorageInfo> drives;
@@ -32,6 +33,7 @@ public:
     void storageCurrentIndexChanged(int index);
 
     QUrl testDownloadSpeeds();
+    bool checkMD5Sum();
     void downloadImage(QUrl imageUrl);
     void prepareDrive(QString mntPoint);
     void writeImage(QFile *isoImage);

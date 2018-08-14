@@ -21,14 +21,53 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     this->ui->distro_logo->setPixmap(QPixmap(":/logo.png"));
     QFile inputFile(":/os.conf");
-    if (inputFile.open(QIODevice::ReadOnly))
+    if (inputFile.open(QIODevice::ReadOnly | QIODevice::Text))
     {
+       qDebug() << "Input file opened.";
        QTextStream in(&inputFile);
-       this->os_name = in.readLine().mid(8);
-       this->iso_url = in.readLine().mid(8);
-       this->iso_mirror = in.readLine().mid(11);
-       this->md5 = in.readLine().mid(4);
-       qDebug() << os_name << " " << iso_url << " " << iso_mirror << " " << md5 << endl;
+       QString line = "";
+       if (in.atEnd())
+           qDebug() << "File is empty.";
+       while (!in.atEnd())
+       {
+            line = in.readLine();
+
+            if (line.startsWith("#"))
+            {
+                qDebug() << line << "Comment";
+                continue;
+            }
+            if (line.startsWith("os_name=", Qt::CaseInsensitive))
+            {
+                this->os_name = line.mid(8);
+                qDebug() << line << "OS Name";
+            }
+            if (line.startsWith("iso_url=", Qt::CaseInsensitive))
+            {
+                this->iso_url = line.mid(8);
+                qDebug() << line << "ISO Url";
+            }
+            if (line.startsWith("mirrors-aviable=", Qt::CaseInsensitive))
+            {
+                QString avbl = line.mid(16);
+                this->mirrors_aviable = (avbl.compare("True", Qt::CaseInsensitive) == 0);
+                qDebug() << line << "Mirror aviability";
+            }
+            if (line.startsWith("mirrors+=", Qt::CaseInsensitive))
+            {
+                this->mirrors.append(QUrl::fromUserInput(line.mid(11)));
+                qDebug() << line << "Mirror +=";
+            }
+            if (line.startsWith("md5=", Qt::CaseInsensitive ))
+            {
+                this->md5 = line.mid(4);
+                qDebug() << line << "MD5 Sum";
+            }
+            if (in.atEnd())
+                qDebug() << "At end.";
+
+       }
+       qDebug() << os_name << " " << iso_url << " " << mirrors_aviable << " " << mirrors << " " << md5 << endl;
        inputFile.close();
     }
     this->setWindowTitle(os_name + " Media Creation Tool");
@@ -65,11 +104,11 @@ void MainWindow::on_btnStartInstall_released()
         this->update();
         this->repaint();
         this->prepareDrive(this->selectedDriveInfo.rootPath());
-        this->ui->lblCurrentAction->setText(tr(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Downloading... (Step 2 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is downloading the ISO Image...</span></p></body></html>")).replace("%OS%", this->os_name));
+        this->ui->lblCurrentAction->setText(tr("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Downloading... (Step 2 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is downloading the ISO Image...</span></p></body></html>").replace("%OS%", this->os_name));
         this->update();
         this->repaint();
-        this->downloadImage(fastestUrl);
         connect(this, &MainWindow::downloaded, this, &MainWindow::writeImage);
+        this->downloadImage(fastestUrl);
     }
     else
     {
@@ -128,7 +167,6 @@ void MainWindow::storageCurrentIndexChanged(int index)
 QUrl MainWindow::testDownloadSpeeds()
 {
     /* TEST MAIN URL */
-    bool iso_url_dead = false;
     QStringList parameters;
     bool win = false;
 #if defined(Q_OS_WIN)
@@ -154,45 +192,67 @@ QUrl MainWindow::testDownloadSpeeds()
            isoping_s = isoping_s.left(isoping_s.indexOf(" ms", 0, Qt::CaseInsensitive));
        isoping_s = isoping_s.right(isoping_s.length() - (isoping_s.lastIndexOf("=") + 1));
        qDebug() << "Main URL Ping (ms): " << isoping_s;
-   } else {
-       // it's dead, set iso_url_dead to true
-       iso_url_dead = true;
    }
 
-   /* TEST MIRROR URL */
-   bool mirror_url_dead = false;
-   QStringList parameters2;
-   win = false;
+   /* TEST MIRROR URLS */
+   QUrl fastestUrl = QUrl(this->iso_url);
+   float fastestPing = isoping_s.toFloat();
+   QUrl currentUrl;
+   float currentPing;
+   if (mirrors_aviable)
+   {
+       foreach (currentUrl, this->mirrors) {
+           QStringList parameters2;
+           win = false;
 #if defined(Q_OS_WIN)
-   parameters2 << "-n" << "1";
-   qDebug() << "OS is Windows";
-   win = true;
+           parameters2 << "-n" << "1";
+           qDebug() << "OS is Windows";
+           win = true;
 #else
-   parameters2 << "-c 1";
-   qDebug() << "OS is not Windows";
+           parameters2 << "-c 1";
+           qDebug() << "OS is not Windows";
 #endif
-  parameters2 << QUrl(this->iso_mirror).host();
-  QProcess *mirrorping_p = new QProcess();
-  mirrorping_p->start("ping", parameters2);
-  mirrorping_p->waitForFinished();
-  int exitCode2 = isoping_p->exitCode();
-  QString mirrorping_s = "";
-  if (exitCode2 == 0) {
-      // it's alive, get result
-      QString mirrorping_s = QString(mirrorping_p->readAllStandardOutput());
-      if (win)
-          mirrorping_s = mirrorping_s.left(mirrorping_s.indexOf("ms", 0, Qt::CaseInsensitive));
-      else
-          mirrorping_s = mirrorping_s.left(mirrorping_s.indexOf(" ms", 0, Qt::CaseInsensitive));
-      mirrorping_s = mirrorping_s.right(mirrorping_s.length() - (mirrorping_s.lastIndexOf("=") + 1));
-      qDebug() << "Mirror Ping (ms): " << mirrorping_s;
-  } else {
-      // it's dead, set mirror_url_dead to true
-      mirror_url_dead = true;
-  }
+          parameters2 << currentUrl.host();
+          QProcess *mirrorping_p = new QProcess();
+          mirrorping_p->start("ping", parameters2);
+          mirrorping_p->waitForFinished();
+          int exitCode2 = mirrorping_p->exitCode();
+          QString mirrorping_s = "";
+          if (exitCode2 == 0) {
+              if (win)
+              {
+                  if (mirrorping_s.indexOf("ms", 0, Qt::CaseInsensitive) == -1)
+                  {
+                      continue;
+                  }
+              }
+              else
+              {
+                  if (mirrorping_s.indexOf(" ms", 0, Qt::CaseInsensitive) == -1)
+                  {
+                      continue;
+                  }
+              }
+              mirrorping_s = QString(mirrorping_p->readAllStandardOutput());
+              if (win)
+                  mirrorping_s = mirrorping_s.left(mirrorping_s.indexOf("ms", 0, Qt::CaseInsensitive));
+              else
+                  mirrorping_s = mirrorping_s.left(mirrorping_s.indexOf(" ms", 0, Qt::CaseInsensitive));
+              mirrorping_s = mirrorping_s.right(mirrorping_s.length() - (mirrorping_s.lastIndexOf("=") + 1));
+              currentPing = mirrorping_s.toFloat();
+              if (currentPing < fastestPing)
+              {
+                  fastestUrl = currentUrl;
+                  fastestPing = currentPing;
+              }
+              qDebug() << "Mirror Ping (ms): " << mirrorping_s;
+          }
+       }
+   }
+
 
   /* CALCULATE RESULT */
-  if (iso_url_dead && mirror_url_dead)
+  if (fastestUrl.isEmpty())
   {
       QMessageBox *error = new QMessageBox(this);
       error->setWindowTitle(tr("Cannot Reach Download Servers"));
@@ -201,27 +261,9 @@ QUrl MainWindow::testDownloadSpeeds()
       error->exec();
       this->close();
   }
-  if (iso_url_dead && (!mirror_url_dead))
-  {
-      qDebug() << "USING MIRROR URL TO DOWNLOAD";
-      return QUrl(this->iso_mirror);
-  }
-  if ((!iso_url_dead) && mirror_url_dead)
-  {
-      qDebug() << "USING MAIN URL TO DOWNLOAD";
-      return QUrl(this->iso_url);
-  }
-  float isoping = isoping_s.toFloat();
-  float mirrorping = mirrorping_s.toFloat();
-  if (isoping <= mirrorping)
-  {
-      qDebug() << "USING MAIN URL TO DOWNLOAD";
-      return QUrl(this->iso_url);
-  }
   else
   {
-      qDebug() << "USING MIRROR URL TO DOWNLOAD";
-      return QUrl(this->iso_mirror);
+      return fastestUrl;
   }
 }
 
@@ -274,6 +316,17 @@ void MainWindow::prepareDrive(QString mntPoint)
 #endif
 }
 
+bool MainWindow::checkMD5Sum()
+{
+    QProcess *md5_p = new QProcess();
+    md5_p->start("md5sum ./os-image.iso");
+    md5_p->waitForFinished();
+    QString md5_s = md5_p->readAllStandardOutput();
+    md5_s = md5_s.left(md5_s.indexOf(" ./os-image.iso"));
+    qDebug() << "MD5 Check: Expected: " << this->md5 << ", Read: " << md5_s;
+    return (this->md5.compare(md5_s, Qt::CaseInsensitive) == 0);
+}
+
 void MainWindow::downloadImage(QUrl imageUrl)
 {
     QNetworkRequest request(imageUrl);
@@ -293,9 +346,22 @@ void MainWindow::imageDownloaded(QNetworkReply *pReply)
     } else {
         QString filename = "./os-image.iso";
         if (saveToDisk(filename, pReply)) {
+            this->ui->pbStatus->setValue(54);
+            this->update();
+            this->repaint();
+            bool valid = this->checkMD5Sum();
             this->ui->pbStatus->setValue(60);
             this->update();
             this->repaint();
+            if (!valid)
+            {
+                QMessageBox *verror = new QMessageBox(this);
+                verror->setWindowTitle(tr("Image file invalid"));
+                verror->setText(tr("ERROR:\nThe download of the image failed.\nPlease try again later.\nIf you don't see this error for the first time,\nplease contact us at support@jagudev.net\nand provide the following error message:\n") + pReply->errorString());
+                verror->addButton(QMessageBox::Ok);
+                verror->exec();
+                this->close();
+            }
             emit downloaded(new QFile(filename));
         }
     }
@@ -322,7 +388,7 @@ bool MainWindow::saveToDisk(const QString &filename, QIODevice *data)
 
 void MainWindow::writeImage(QFile *isoImage)
 {
-    this->ui->lblCurrentAction->setText(tr(QString("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Writing... (Step 3 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is writing the<br />Image to the Media...</span></p></body></html>")).replace("%OS%", this->os_name));
+    this->ui->lblCurrentAction->setText(tr("<html><head/><body><p><span style=\" font-size:20pt; font-weight:600; text-decoration: underline;\">Writing... (Step 3 of 3)</span></p><p><span style=\" font-size:14pt;\">Please wait while the %OS%<br/>Media Creation Tool is writing the<br />Image to the Media...</span></p></body></html>").replace("%OS%", this->os_name));
     this->update();
     this->repaint();
 #if defined(Q_OS_WIN)
@@ -348,7 +414,7 @@ void MainWindow::writeImage(QFile *isoImage)
     this->update();
     this->repaint();
 #endif
-    this->ui->lblDone->setText(this->ui->lblDone->text.replace("%OS%", this->os_name));
+    this->ui->lblDone->setText(this->ui->lblDone->text().replace("%OS%", this->os_name));
     this->ui->stackedWidget->setCurrentIndex(3);
 }
 
