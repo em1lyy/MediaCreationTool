@@ -1,6 +1,6 @@
 os_name=JaguOS 18.09
 test_url=https://os.jagudev.net/1MB-pingtest.txt
 iso_url=https://os.jagudev.net/jaguos_18.09-current.iso
-test_mirror=https://raw.githubusercontent.com/jonasjaguar/JaguOS-ISO/master/1MB-pingtest.txt
-iso_mirror=https://raw.githubusercontent.com/jonasjaguar/JaguOS-ISO/master/jaguos_18.09-current.iso
+test_mirror=https://raw.githubusercontent.com/em1lyy/JaguOS-ISO/master/1MB-pingtest.txt
+iso_mirror=https://raw.githubusercontent.com/em1lyy/JaguOS-ISO/master/jaguos_18.09-current.iso
 md5=b9aef5c05d5e13aa11b968b17169a91f
